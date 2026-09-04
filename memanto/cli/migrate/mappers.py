@@ -38,6 +38,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from memanto.app.constants import VALID_MEMORY_TYPES, VALID_PROVENANCE_TYPES
+from memanto.cli.migrate.chatgpt_mapper import map_chatgpt
 
 # Mem0 ships category labels per memory. Map the common ones to Memanto's
 # typed primitives; everything else falls through to None (auto-classify).
@@ -572,11 +573,12 @@ def map_okf(export: dict[str, Any]) -> list[dict[str, Any]]:
 # memories, so one incident collapses into a single grouped payload rather
 # than mapping row-for-row. That needs the user's capture settings, which
 # this registry's signature cannot carry — see ``langfuse_rules.build_rows``.
-MAPPERS: dict[str, Callable[[dict[str, Any]], list[dict[str, Any]]]] = {
+MAPPERS: dict[str, Callable[[Any], list[dict[str, Any]]]] = {
     "mem0": map_mem0,
     "letta": map_letta,
     "supermemory": map_supermemory,
     "okf": map_okf,
+    "chatgpt": map_chatgpt,
 }
 
 

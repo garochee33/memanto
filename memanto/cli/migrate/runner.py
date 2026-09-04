@@ -221,12 +221,15 @@ def load_export(file_path: Path) -> dict[str, Any]:
     if not file_path.exists():
         raise FileNotFoundError(f"Export file not found: {file_path}")
     data = json.loads(file_path.read_text(encoding="utf-8"))
+    # ChatGPT conversations.json is a top-level array — normalize to dict.
+    if isinstance(data, list):
+        return {"conversations": data, "source_path": str(file_path)}
     if not isinstance(data, dict):
-        raise ValueError(f"Export file must be a JSON object: {file_path}")
+        raise ValueError(f"Export file must be a JSON object or array: {file_path}")
     return data
 
 
-def map_export(provider: str, export: dict[str, Any]) -> list[dict[str, Any]]:
+def map_export(provider: str, export: dict[str, Any] | list[Any]) -> list[dict[str, Any]]:
     mapper = MAPPERS.get(provider)
     if mapper is None:
         raise ValueError(f"Unknown provider '{provider}'. Supported: {sorted(MAPPERS)}")
@@ -250,6 +253,11 @@ def write_preview(rows: list[dict[str, Any]], dest: Path) -> Path:
 
 def source_count(provider: str, export: dict[str, Any]) -> int:
     """Best-effort count of source records (for the summary header)."""
+    if provider == "chatgpt":
+        conversations = export.get("conversations")
+        if conversations is None and isinstance(export, list):
+            return len(export)
+        return len(conversations or [])
     if provider == "letta":
         return len(export.get("passages", []) or [])
     if provider == "langfuse":

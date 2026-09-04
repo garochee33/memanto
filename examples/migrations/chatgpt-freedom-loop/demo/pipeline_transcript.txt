@@ -1,0 +1,15 @@
+==> Generating ChatGPT-shaped sample export
+Wrote data/conversations.json (4 conversations)
+==> Mapping + writing migration report + OKF sample
+Mapped 5 memories
+Wrote reports/migration_summary.md
+Wrote OKF sample under okf_sample
+
+Done. Inspect:
+  reports/migration_summary.md
+  okf_sample/index.md
+  MAPPING.md
+
+Live path (requires Memanto + MOORCHEH_API_KEY):
+  memanto migrate chatgpt --file ./data/conversations.json --dry-run --report
+  memanto memory export --okf ./okf_live

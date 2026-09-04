@@ -84,6 +84,7 @@ from memanto.cli.commands._shared import (
 )
 from memanto.cli.migrate import langfuse_config, langfuse_discover, langfuse_state
 from memanto.cli.migrate.langfuse_rules import CaptureConfig, parse_capture_modes
+from memanto.cli.migrate.chatgpt_mapper import load_chatgpt_export
 from memanto.cli.migrate.okf_loader import load_okf_bundle
 from memanto.cli.migrate.runner import (
     load_export,
@@ -609,6 +610,122 @@ def migrate_okf(
     )
     body_lines = [
         f"[dim]OKF nodes:[/dim] {summary.source_count}",
+        f"[dim]Mapped memories:[/dim] {summary.mapped_count}  "
+        f"[dim](skipped {summary.skipped})[/dim]",
+        f"[dim]Type breakdown:[/dim] {type_lines}",
+    ]
+    if dry_run:
+        body_lines.append("")
+        body_lines.append("[yellow]Dry run — no writes performed.[/yellow]")
+    else:
+        body_lines.append(
+            f"[dim]Imported:[/dim] {summary.imported}  "
+            f"[dim]Failed:[/dim] {summary.failed}  "
+            f"[dim]Batches:[/dim] {summary.batches}"
+        )
+        body_lines.append(f"[dim]Target agent:[/dim] {target_agent}")
+
+    body_lines.append("")
+    body_lines.append(f"[dim]Run dir:[/dim] {run_dir}")
+    body_lines.append(f"[dim]Mapped preview:[/dim] {preview_path}")
+    if summary.errors:
+        body_lines.append(
+            f"[red]First error:[/red] {summary.errors[0]}  "
+            "[dim](see run dir for more)[/dim]"
+        )
+
+    border = WARNING if summary.failed else SUCCESS
+    console.print()
+    console.print(
+        Panel(
+            "\n".join(body_lines),
+            title=(
+                "[bold yellow]Dry run complete[/bold yellow]"
+                if dry_run
+                else "[bold green]Import complete[/bold green]"
+            ),
+            border_style=border,
+        )
+    )
+
+
+@migrate_app.command("chatgpt")
+def migrate_chatgpt(
+    path: Path = typer.Argument(
+        ...,
+        help=(
+            "Path to ChatGPT conversations.json, or an unzipped export directory "
+            "that contains it."
+        ),
+    ),
+    agent: str | None = typer.Option(
+        None,
+        "--agent",
+        "-a",
+        help="Target Memanto agent id (defaults to the active agent).",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview the mapping without writing.",
+    ),
+):
+    """Import a ChatGPT data export into the active (or selected) agent.
+
+    Use Settings → Data controls → Export data in ChatGPT, unzip the archive,
+    then point this command at ``conversations.json`` (or the unzipped folder).
+
+    Examples:
+        memanto migrate chatgpt ./conversations.json --dry-run
+        memanto migrate chatgpt ./chatgpt-export --agent my-agent
+    """
+    if not path.exists():
+        _error(
+            f"ChatGPT export not found: {path}",
+            hint="Provide conversations.json or the unzipped ChatGPT export directory.",
+        )
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    run_dir = config_manager.get_migrate_dir("chatgpt") / stamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    mode = "Dry run" if dry_run else "Migrate"
+    console.print(
+        Panel.fit(
+            f"[{BOLD_PRIMARY}]ChatGPT -> Memanto  {mode}[/{BOLD_PRIMARY}]",
+            border_style=PRIMARY,
+        )
+    )
+
+    def progress(msg: str) -> None:
+        console.print(f"  [{BRIGHT}]…[/{BRIGHT}] {msg}")
+
+    target_agent = None if dry_run else _resolve_target_agent(agent)
+
+    progress(f"Loading ChatGPT export from {path}")
+    try:
+        export = load_chatgpt_export(path)
+    except Exception as exc:
+        _error(f"Failed to load ChatGPT export: {exc}")
+
+    progress("Mapping conversations onto Memanto schema...")
+    client = None if dry_run else get_client()
+    summary, rows = run_migration(
+        provider="chatgpt",
+        export=export,
+        client=client,
+        agent_id=target_agent or "",
+        dry_run=dry_run,
+        on_progress=progress,
+    )
+
+    preview_path = write_preview(rows, run_dir / "mapped_preview.json")
+
+    type_lines = (
+        ", ".join(f"{k}: {v}" for k, v in sorted(summary.type_counts.items())) or "—"
+    )
+    body_lines = [
+        f"[dim]Conversations:[/dim] {summary.source_count}",
         f"[dim]Mapped memories:[/dim] {summary.mapped_count}  "
         f"[dim](skipped {summary.skipped})[/dim]",
         f"[dim]Type breakdown:[/dim] {type_lines}",
